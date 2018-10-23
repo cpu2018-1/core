@@ -143,6 +143,8 @@ module cpu (
 				6'b101100: dd <= ds >>> dt[4:0];
 				6'b101000: dd <= ds >>> imm[4:0];
 				// jump branch
+				6'b100010: dd <= dd; // J
+				6'b101010: dd <= dd; // JR
 				6'b000110: dd <= pc + 1;
 				6'b001110: dd <= pc + 1;
 				6'b000010: dd <= dd;
@@ -232,9 +234,9 @@ module cpu (
 			// for writing reg, you need 1clk
 
 			//pc update
-			if (i_rdata[31:26] == 6'b000110) begin // JAL
+			if (i_rdata[31:26] == 6'b000110 || i_rdata[31:26] == 6'b100010) begin // JAL J
 				pc <= $signed(pc) + $signed({ {6{jaddr[25]}},jaddr });
-			end else if (i_rdata[31:26] == 6'b001110) begin // JALR
+			end else if (i_rdata[31:26] == 6'b001110 || i_rdata[31:26] == 6'b101010) begin // JALR JR
 				pc <= ds;
 			end else if (i_rdata[27:26] == 2'b10) begin // B
 				if((i_rdata[31:28] == 4'b0000 && ds == dt) ||
