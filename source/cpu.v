@@ -220,6 +220,7 @@ module cpu (
 				end else if (fpu_state == 2 && f_out_rdy && f_out_vld) begin
 					f_out_rdy <= 0;
 					fpu_state <= 0;
+					dd <= f_out_data;
 					state <= st_write;
 				end else begin
 					dd <= dd;
