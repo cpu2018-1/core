@@ -1,4 +1,4 @@
-module ALU (
+module alu (
 	input wire [2:0] ope,
 	input wire [31:0] ds,
 	input wire [31:0] dt,

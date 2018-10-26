@@ -57,8 +57,11 @@ module cpu2 (
 	reg [2:0] fpu_state;
 	reg [2:0] state;
 
+	//hazard
 	wire is_branch;
 	wire is_exec_wait;
+	wire is_cmu;
+	wire is_cms;
 
 	//if-df
 	wire [31:0] id_instr;
@@ -76,7 +79,6 @@ module cpu2 (
 	reg [31:0] de_pc;
 	reg de_ds_is_f;
 	reg de_dt_is_f;
-	reg de_dd_is_f;
 	reg de_ds_is_en;
 	reg de_dt_is_en;
 	reg [15:0] de_imm;
@@ -111,11 +113,19 @@ module cpu2 (
 	//mem
 	wire [31:0] ir_addr_tmp;
 
+	//branch
+	wire b_ds_eq_dt;
+	wire b_ds_lt_dt;
+
 	//alu etc
-	wire [3:0] alu_ope;
 	wire [31:0] exec_ds;
 	wire [31:0] exec_dt;
-	wire [31:0] exec_dd;
+	wire [2:0] alu_ope;
+	wire [31:0] alu_ds;
+	wire [31:0] alu_dt;
+	wire [31:0] alu_dd;
+
+	alu u_alu(alu_ope,alu_ds,alu_dt,alu_dd);
 	
 	//regfile
 	gp_regfile gpr(clk,id_instr[20:16],id_instr[15:11],ww_instr[28:26] == 3'b110 ? 5'b11111 : ww_instr[25:21],gp_rs ,gp_rt,gp_rd,gp_we);
@@ -131,8 +141,11 @@ module cpu2 (
 	//instr mem
 	assign ir_enb = 1;
 	assign ir_addr_tmp = is_exec_wait ? id_pc :
-											 is_branch ? de_pc_imm :
+											 is_branch && ~de_is_jump ? de_pc_imm :
+											 ~is_branch && de_is_jump ? de_pc + 1;
 											 id_instr[31:26] == 6'b000110 || id_instr[31:26] == 6'b100010 ? id_pc_jaddr :	// J,JR
+											 is_cmu ? user_irgn :
+											 is_cms ? 0 :
 											 hogeyosoku ? hoge : pc;	// B /////////////////////////////////////////////////
 	assign ir_addrb = {ir_addr_tmp[29:0],2'b00};
 
@@ -157,11 +170,31 @@ module cpu2 (
 	assign id_pc_jaddr = $signed(id_pc) + $signed(id_jaddr);
 	assign id_pc_imm = $signed(id_pc) + $signed(id_imm);
 	assign id_is_jump = yosoku;///////////////////////////////////////////////////////////////
+	assign is_cmu = id_instr[31:26] == 6'b0 && id_instr[10:0] == 1;
+	assign is_cms = id_instr[31:26] == 6'b0 && id_instr[10:0] == 2;
 	
+	// hazard
+	assign is_exec_wait = ew_dd_is_en &&
+												((de_ds_is_en && de_instr[20:16] != 5'b0 && 
+														de_instr[20:16] == ew_instr[25:21] && ~(de_ds_is_f ^ ew_dd_is_f)) ||
+													(de_dt_is_en && de_instr[15:11] != 5'b0 &&
+														de_instr[15:11] == ew_instr[25:21] && ~(de_dt_is_f ^ ew_dd_is_f)));
+	assign is_branch =  (de_instr[31:26] == 6'b000010 && b_ds_eq_dt) ||
+											(de_instr[31:26] == 6'b001010 && ~b_ds_eq_dt) ||
+											(de_instr[31:26] == 6'b010010 && b_ds_lt_dt) ||
+											(de_instr[31:26] == 6'b011010 && (b_ds_eq_dt || b_ds_lt_dt)) ||
+											de_instr[31:26] == 6'b001110 || de_instr[31:26] == 6'b101010;  // JALR,JR
+											
+	assign b_ds_eq_dt = exec_ds == exec_dt;
+	assign b_ds_lt_dt = exec_ds < exec_dt;
+
+
 	//alu
-	assign alu_ope = de_instr[31:28];
-	assign exec_ds = //////// forward
-	assign exec_dt = ///////
+	assign alu_ope = de_instr[31:29];
+	assign alu_ds = exec_ds;
+	assign alu_dt = de_instr[27:26] == 2'b100 ? exec_dt : de_imm;
+	assign exec_ds = (ww_dd_is_en && de_instr[20:16] != 5'b0 && ww_instr[25:21] == de_instr[20:16] && ~(id_ds_is_f ^ ww_dd_is_f)) ? ww_dd : de_ds; 
+	assign exec_dt = (ww_dd_is_en && de_instr[15:11] != 5'b0 && ww_instr[25:21] == de_instr[15:11] && ~(id_dt_is_f ^ ww_dd_is_f)) ? ww_dd : de_dt;
 
 	always @(posedge clk) begin
 		if(~rstn) begin
@@ -174,27 +207,149 @@ module cpu2 (
 			state <= st_normal;
 		end else if (state == st_normal) begin
 			if (~is_exec_wait) begin	
-				if(is_branch) begin // id_is_en
+				if((is_branch && ~de_is_jump) || (~is_branch && de_is_jump)) begin // id_is_en
 					id_is_en <= 0;
 				end else begin
 					id_is_en <= 1;
 				end
-				if (is_branch) begin // PC
+				if (is_branch && ~de_is_jump) begin // PC
 					pc <= de_pc_imm + 1;
-				end else if (id_instr[31:26] == 6'b000110)  begin // JAL
-					pc <= pc_jaddr + 1;
+				if(~is_branch && de_is_jump) begin
+					pc <= de_pc + 2;
+				end else if (id_instr[31:26] == 6'b000110 || id_instr[31:26] == 6'b100010)  begin // JAL,J
+					pc <= id_pc_jaddr + 1;
+				end else if(is_cmu) begin
+					pc <= user_irgn + 1;
+				end else if (is_cms) begin
+					pc <= 1;
 				end else begin
 					pc <= pc + 1;
 				end
+				id_pc <= pc;
 				// dfetch
-
+				de_instr <= id_instr;
+				de_pc <= id_pc;
+				de_ds_is_f <= id_ds_is_f;
+				de_dt_is_f <= id_dt_is_f;
+				de_ds_is_en <= (id_instr[31:26] != 6'b0 && id_instr[27:26] == 2'b0) ||
+												(id_instr[28:26] == 3'b010 && id_instr[31] == 1'b0) ||
+												id_instr[28:26] == 3'b111 ||
+												id_instr[31:26] == 6'b000011 ||
+												id_instr[27:26] == 2'b01 ||
+												(id_instr[31:26] == 6'b0 && (id_instr[10:0] == 3 || id_instr[10:0] == 5));
+				de_dt_is_en <= id_instr[28:26] == 3'b100 ||
+												(id_instr[28:26] == 3'b010 && id_instr[31] == 1'b0) ||
+												id_instr[31:26] == 6'b000111 ||
+												(id_instr[27:26] == 2'b01 && id_instr[5] == 1'b0) ||
+												(id_instr[31:26] == 6'b0 && id_instr[10:0] == 3);
+				de_imm <= id_imm;
+				de_pc_imm <= id_pc_imm;
+				de_is_jump <= id_is_jump;
+				// forward
+				if(ww_dd_is_en && id_instr[20:16] != 5'b0 && id_instr[20:16] == ww_instr[25:21] && ~(id_ds_is_f ^ ww_dd_is_f)) begin
+					de_ds <= ww_dd;
+				end else begin	
+					de_ds <= r_ds;
+				end
+				if(ww_dd_is_en && id_instr[15:11] != 5'b0 && id_instr[15:11] == ww_instr[25:21] && ~(id_dt_is_f ^ ww_dd_is_f)) begin
+					de_dt <= ww_dd;
+				end else begin
+					de_dt <= r_dt;
+				end
 				// exec
+				ew_instr <= de_instr;
+				case(de_instr[27:26])
+					2'b00: 	begin
+										if (de_instr[31:26] == 6'b0) begin
+											ew_dd_is_en <= 0;
+											ew_dd_is_f <= 0;
+											if(de_instr[10:0] == 1) begin //CMU
+												cpu_mode <= 1;
+											end else if(de_instr[10:0] == 2) begin // CMS
+												cpu_mode <= 0;
+											end else if(de_instr[10:0] == 3) begin //ISW
+												ew_dd <= ew_dd;
+											end else if(de_instr[10;0] == 4) begin //ECLR
+												err <= 0;
+											end else if(de_instr[10:0] == 5) begin //ESET
+												err <= exec_ds[7:0];
+											end else begin
+												ew_dd <= ew_dd;
+											end
+										end else begin
+											ew_dd <= alu_dd;
+											ew_dd_is_en <= 1;
+											ew_dd_is_f <= 0;
+										end	
+									end
+					2'b10: 	begin
+										if (de_instr[28]) begin
+											ew_dd <= de_pc + 1;
+											ew_dd_is_en <= 1;
+											ew_dd_is_f <= 0;
+										end else begin
+											ew_dd <= 0;
+											ew_dd_is_en <= 0;
+											ew_dd_is_f <= 0;
+										end				
+									end
+					2'b11:	begin
+										if(de_instr[31:28] == 4'b0011) begin // LW
+											ew_dd <= alu_dd;
+											ew_dd_is_en <= 1;
+											ew_dd_is_f <= 0;
+										end else if(de_instr[31:28] == 4'b0001) begin // SW
+											ew_dd <= alu_dd;
+											ew_dd_is_en <= 0;
+											ew_dd_is_f <= 0;
+											ew_wdata <= exec_dt;
+										end else if(de_instr[31:28] == 4'b0000) begin // OUT
+											io_out_data <= exec_ds[7:0];
+											io_out_vld <= 1;
+											state <= st_stall;
+										end else if (de_instr[31:28] == 4'b0010) begin //IN
+											io_in_rdy <= 1;
+											state <= st_stall;
+										end else begin
+											err <= err | err_lost;
+										end
+									end
+					2'b01		begin
+										if(de_instr[5:2] <= 4'b1011) begin
+											f_in_vld <= 1;
+											f_ope_data <= de_instr[5:2];
+											f_in1_data <= exec_ds;
+											f_in2_data <= exec_dt;
+											fpu_state <= 1;
+											state <= st_stall;
+										end else if(de_instr[5:2] == 4'b1100) begin
+											ew_dd <= exec_ds;
+											ew_dd_is_en <= 1;
+											ew_dd_is_f <= 1;
+										end else if(de_instr[5:2] == 4'b1101) begin
+											ew_dd <= exec_ds;
+											ew_dd_is_en <= 1;
+											ew_dd_is_f <= 0;
+										end else begin
+											err <= err | err_lost;
+										end
+									end
+					default: err <= err | err_lost;
+				endcase
 			end else begin // if is_exec_wait
+				de_ds <= exec_ds;
+				de_dt <= exec_dt;
+				ew_instr <= 0;
+				ew_dd_is_en <= 0;
 			end
 
 			// wait <- if stall, here
-
+			ww_instr <= ew_instr;
+			ww_dd <= ew_dd;
+			ww_dd_is_f <= ew_dd_is_f;
+			ww_dd_is_en <= ew_dd_is_en;
 			// write -> see assign reg_we
+
 		end else if (state == st_stall) begin // FPU, IO
 			// wait stage
 			if (ew_instr[31:26] == 6'b000011) begin // OUT
@@ -221,6 +376,7 @@ module cpu2 (
 					f_out_rdy <= 0;
 					ew_dd <= f_out_data;
 					fpu_state <= 0;
+					state <= st_normal;
 				end else begin
 					ew_dd <= ew_dd;
 				end
