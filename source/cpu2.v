@@ -116,6 +116,11 @@ module cpu2 (
 	//branch
 	wire b_ds_eq_dt;
 	wire b_ds_lt_dt;
+	wire bp_is_branch;
+	wire bp_is_b_op;
+	wire bp_is_taken;
+
+	branch_pred(clk,rstn,bp_is_branch,bp_is_b_op,bp_is_taken);
 
 	//alu etc
 	wire [31:0] exec_ds;
@@ -146,7 +151,7 @@ module cpu2 (
 											 id_instr[31:26] == 6'b000110 || id_instr[31:26] == 6'b100010 ? id_pc_jaddr :	// J,JR
 											 is_cmu ? user_irgn :
 											 is_cms ? 0 :
-											 hogeyosoku ? hoge : pc;	// B /////////////////////////////////////////////////
+											 id_is_jump ? id_pc_imm : pc;	// B 
 	assign ir_addrb = {ir_addr_tmp[29:0],2'b00};
 
 	assign iw_ena = 1;
@@ -169,7 +174,7 @@ module cpu2 (
 	assign id_dt_is_f = id_instr[27:26] == 2'b01;
 	assign id_pc_jaddr = $signed(id_pc) + $signed(id_jaddr);
 	assign id_pc_imm = $signed(id_pc) + $signed(id_imm);
-	assign id_is_jump = yosoku;///////////////////////////////////////////////////////////////
+	assign id_is_jump = bp_is_taken;
 	assign is_cmu = id_instr[31:26] == 6'b0 && id_instr[10:0] == 1;
 	assign is_cms = id_instr[31:26] == 6'b0 && id_instr[10:0] == 2;
 	
@@ -187,6 +192,8 @@ module cpu2 (
 											
 	assign b_ds_eq_dt = exec_ds == exec_dt;
 	assign b_ds_lt_dt = exec_ds < exec_dt;
+	assign bp_is_branch = is_branch;
+	assign bp_is_b_op = de_instr[28:26] == 3'b010 && de_instr[31] == 1'b0;
 
 
 	//alu
