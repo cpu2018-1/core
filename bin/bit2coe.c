@@ -15,12 +15,13 @@ int main(int argc,char** argv){
 	}
 	
 	printf("memory_initialization_radix=16;\nmemory_initialization_vector=");
-
+	
+	int counter = 0;
 	unsigned char c[4];
 	while(1){
 		int num = fread(c,1,4,fp);
 		if(num != 4){
-			if(num != 0){
+			if(num != 0 || feof(fp) != 0){
 				fprintf(stderr,"wrong size of file");
 			}
 			break;
@@ -30,8 +31,10 @@ int main(int argc,char** argv){
 			unsigned int ui = (unsigned int)c[i];
 			printf("%02x",ui);
 		}
+		counter++;
 	}
 	printf(";\n");
 	fclose(fp);
+	fprintf(stderr,"%d instr\n",counter);
 	return 0;	
 }
