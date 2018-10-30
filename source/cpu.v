@@ -71,7 +71,7 @@ module cpu (
 
 	// JAL, JALR-> r31
 	gp_regfile gpr(clk,i_rdata[20:16],i_rdata[15:11],i_rdata[28:26] == 3'b110 ? 5'b11111 : i_rdata[25:21],gp_rs,gp_rt,gp_rd,gp_we);
-	fp_regfile fpr(clk,i_rdata[20:16],i_rdata[15:11],i_rdata[25:21],fp_rs,fp_rt,fp_rd,fp_we);
+	gp_regfile fpr(clk,i_rdata[20:16],i_rdata[15:11],i_rdata[25:21],fp_rs,fp_rt,fp_rd,fp_we);
 
 	//nearly const
 	assign i_en = 1;

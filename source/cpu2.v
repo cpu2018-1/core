@@ -52,20 +52,20 @@ module cpu2 (
 
 	localparam user_irgn = 64;
 
-	reg [31:0] pc;
+	(* mark_debug = "true" *) reg [31:0] pc;
 	reg [1:0] cpu_mode;
 	reg [2:0] fpu_state;
 	reg [2:0] state;
 
 	//hazard
-	wire jump_by_reg;
-	wire is_branch;
+	(* mark_debug = "true" *) wire jump_by_reg;
+	(* mark_debug = "true" *) wire is_branch;
 	wire is_exec_wait;
 	wire is_cmu;
 	wire is_cms;
 
 	//if-df
-	wire [31:0] id_instr;
+	(* mark_debug = "true" *) wire [31:0] id_instr;
 	wire [15:0] id_imm;
 	wire [25:0] id_jaddr;
 	wire id_ds_is_f;
@@ -139,8 +139,8 @@ module cpu2 (
 	wire test_sig;
 	
 	//regfile
-	gp_regfile gpr(clk,id_instr[20:16],id_instr[15:11],ww_instr[28:26] == 3'b110 ? 5'b11111 : ww_instr[25:21],gp_rs ,gp_rt,gp_rd,gp_we);
-	gp_regfile fpr(clk,id_instr[20:16],ww_instr[15:11],ww_instr[25:21],fp_rs,fp_rt,fp_rd,fp_we);
+	gp_regfile gpr(clk,id_instr[20:16],id_instr[15:11],ww_instr[25:21],gp_rs ,gp_rt,gp_rd,gp_we);
+	gp_regfile fpr(clk,id_instr[20:16],id_instr[15:11],ww_instr[25:21],fp_rs,fp_rt,fp_rd,fp_we);
 
 	assign r_ds = id_ds_is_f ? fp_rs : gp_rs;
 	assign r_dt = id_dt_is_f ? fp_rt : gp_rt;
@@ -156,11 +156,12 @@ module cpu2 (
 	assign ir_addr_tmp = is_exec_wait || state == st_stall ? id_pc :
 											 jump_by_reg ? exec_ds :
 											 is_branch && ~de_is_jump ? de_pc_imm :
-											 is_branch && de_is_jump ? id_pc + 1 :
-											 id_instr[31:26] == 6'b000110 || id_instr[31:26] == 6'b100010 ? id_pc_jaddr :	// J,JR
+											 ~is_branch && de_is_jump ? de_pc + 1 :
+											 id_instr[31:26] == 6'b000110 || id_instr[31:26] == 6'b100010 ? id_pc_jaddr :	// J,JAL
 											 is_cmu ? user_irgn :
 											 is_cms ? 0 :
-											 id_is_jump ? id_pc_imm : pc;	// B 
+											 id_is_jump ? id_pc_imm :	// B 
+											 is_branch && de_is_jump ? id_pc + 1 : pc;
 	assign ir_addrb = {ir_addr_tmp[29:0],2'b00};
 
 	assign iw_ena = 1;
@@ -268,14 +269,18 @@ module cpu2 (
 					pc <= exec_ds + 1;
 				end else if (is_branch && ~de_is_jump) begin 
 					pc <= de_pc_imm + 1;
-				end else if(is_branch && de_is_jump) begin
-					pc <= id_pc + 2;
+				end else if (~is_branch && de_is_jump) begin
+					pc <= de_pc + 2;
 				end else if (id_instr[31:26] == 6'b000110 || id_instr[31:26] == 6'b100010)  begin // JAL,J
 					pc <= id_pc_jaddr + 1;
 				end else if(is_cmu) begin
 					pc <= user_irgn + 1;
 				end else if (is_cms) begin
 					pc <= 1;
+				end else if (id_is_jump) begin
+					pc <= id_pc_imm + 1;
+				end else if (is_branch && de_is_jump) begin
+					pc <= id_pc + 2;
 				end else begin
 					pc <= pc + 1;
 				end
@@ -323,7 +328,11 @@ module cpu2 (
 					de_dt <= r_dt;
 				end
 				// exec
-				ew_instr <= de_instr;
+				if(de_instr[28:26] == 3'b110) begin
+					ew_instr <= {de_instr[31:26],5'b11111,de_instr[20:0]};
+				end else begin
+					ew_instr <= de_instr;
+				end
 				case(de_instr[27:26])
 					2'b00: 	begin
 										if (de_instr[31:26] == 6'b0) begin
@@ -372,9 +381,13 @@ module cpu2 (
 										end else if(de_instr[31:28] == 4'b0000) begin // OUT
 											io_out_data <= exec_ds[7:0];
 											io_out_vld <= 1;
+											ew_dd_is_en <= 0;
+											ew_dd_is_f <= 0;
 											state <= st_stall;
 										end else if (de_instr[31:28] == 4'b0010) begin //IN
 											io_in_rdy <= 1;
+											ew_dd_is_en <= 1;
+											ew_dd_is_f <= 0;
 											state <= st_stall;
 										end else begin
 											err <= err | err_lost;
