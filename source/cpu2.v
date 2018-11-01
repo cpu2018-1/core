@@ -13,11 +13,11 @@ module cpu2 (
 	input wire [31:0] ir_doutb,
 	output wire ir_enb,
 	//data mem
-	output wire [31:0] d_addr,
-	output wire [31:0] d_wdata,
-	input wire [31:0] d_rdata,
+	(* mark_debug = "true" *) output wire [31:0] d_addr,
+	(* mark_debug = "true" *) output wire [31:0] d_wdata,
+	(* mark_debug = "true" *) input wire [31:0] d_rdata,
 	output wire d_en,
-	output wire [3:0] d_we,
+	(* mark_debug = "true" *) output wire [3:0] d_we,
 	//fpu
 	output reg [3:0] f_ope_data,
 	output reg [31:0] f_in1_data,
@@ -89,17 +89,17 @@ module cpu2 (
 	reg de_is_jump;
 	//ex-wa
 	(* mark_debug = "true" *) reg [31:0] ew_instr;
-	reg [31:0] ew_dd;
+	(* mark_debug = "true" *) reg [31:0] ew_dd;
 	reg ew_dd_is_f;
-	reg ew_dd_is_en;
+	(* mark_debug = "true" *) reg ew_dd_is_en;
 	reg [31:0] ew_wdata;
 	//wa-wr
 	(* mark_debug = "true" *) reg [31:0] ww_instr;
-	reg [31:0] ww_dd;
+	(* mark_debug = "true" *) reg [31:0] ww_dd;
 	reg ww_dd_is_f;
-	reg ww_dd_is_en;
+	(* mark_debug = "true" *) reg ww_dd_is_en;
 
-	wire [31:0] ww_dd_rdata;
+	(* mark_debug = "true" *) wire [31:0] ww_dd_rdata;
 
 	//regfile
 	wire [31:0] r_ds;
@@ -107,7 +107,7 @@ module cpu2 (
 	wire [31:0] gp_rs;
 	wire [31:0] gp_rt;
 	wire [31:0] gp_rd;
-	wire gp_we;
+	(* mark_debug = "true" *) wire gp_we;
 	wire [31:0] fp_rs;
 	wire [31:0] fp_rt;
 	wire [31:0] fp_rd;
@@ -128,10 +128,10 @@ module cpu2 (
 	//alu etc
 	wire [31:0] exec_ds;
 	wire [31:0] exec_dt;
-	wire [2:0] alu_ope;
-	wire [31:0] alu_ds;
-	wire [31:0] alu_dt;
-	wire [31:0] alu_dd;
+	(* mark_debug = "true" *) wire [2:0] alu_ope;
+	(* mark_debug = "true" *) wire [31:0] alu_ds;
+	(* mark_debug = "true" *) wire [31:0] alu_dt;
+	(* mark_debug = "true" *) wire [31:0] alu_dd;
 
 	alu u_alu(alu_ope,alu_ds,alu_dt,alu_dd);
 
@@ -212,7 +212,7 @@ module cpu2 (
 	//alu
 	assign alu_ope = de_instr[27:26] == 2'b11 ? 3'b001 : de_instr[31:29]; // SW,LW?
 	assign alu_ds = exec_ds;
-	assign alu_dt = de_instr[28:26] == 3'b100 ? exec_dt : de_imm;
+	assign alu_dt = de_instr[28:26] == 3'b100 ? exec_dt : {{16{de_imm[15]}},de_imm};
 	assign exec_ds = (ww_dd_is_en && (de_instr[20:16] != 5'b0) && (ww_instr[25:21] == de_instr[20:16]) && ~(de_ds_is_f ^ ww_dd_is_f)) ? ww_dd_rdata : de_ds; 
 	assign exec_dt = (ww_dd_is_en && (de_instr[15:11] != 5'b0) && (ww_instr[25:21] == de_instr[15:11]) && ~(de_dt_is_f ^ ww_dd_is_f)) ? ww_dd_rdata : de_dt;
 	assign test_sig = ~(de_ds_is_f ^ ww_dd_is_f);
@@ -293,19 +293,19 @@ module cpu2 (
 					de_pc <= id_pc;
 					de_ds_is_f <= id_ds_is_f;
 					de_dt_is_f <= id_dt_is_f;
-					de_ds_is_en <= (id_instr[31:26] != 6'b0 && id_instr[27:26] == 2'b0) ||
-													(id_instr[28:26] == 3'b010 && id_instr[31] == 1'b0) ||
-													id_instr[31:26] == 6'b001110 ||
-													id_instr[31:26] == 6'b101010 ||
-													id_instr[28:26] == 3'b111 ||
-													id_instr[31:26] == 6'b000011 ||
-													id_instr[27:26] == 2'b01 ||
-													(id_instr[31:26] == 6'b0 && (id_instr[10:0] == 3 || id_instr[10:0] == 5));
-					de_dt_is_en <= id_instr[28:26] == 3'b100 ||
-													(id_instr[28:26] == 3'b010 && id_instr[31] == 1'b0) ||
-													id_instr[31:26] == 6'b000111 ||
-													(id_instr[27:26] == 2'b01 && id_instr[5] == 1'b0) ||
-													(id_instr[31:26] == 6'b0 && id_instr[10:0] == 3);
+					de_ds_is_en <= (id_instr[31:26] != 6'b0 && id_instr[27:26] == 2'b0) || // arith
+													(id_instr[28:26] == 3'b010 && id_instr[31] == 1'b0) || // b
+													id_instr[31:26] == 6'b001110 || // jalr
+													id_instr[31:26] == 6'b101010 || // jr
+													id_instr[28:26] == 3'b111 || // lw,sw
+													id_instr[31:26] == 6'b000011 || //out
+													id_instr[27:26] == 2'b01 || // fpu
+													(id_instr[31:26] == 6'b0 && (id_instr[10:0] == 3 || id_instr[10:0] == 5)); // super
+					de_dt_is_en <= id_instr[28:26] == 3'b100 || // arith not imm
+													(id_instr[28:26] == 3'b010 && id_instr[31] == 1'b0) || // b
+													id_instr[31:26] == 6'b000111 || // sw
+													(id_instr[27:26] == 2'b01 && id_instr[5] == 1'b0) || // fpu
+													(id_instr[31:26] == 6'b0 && id_instr[10:0] == 3); // super
 					de_imm <= id_imm;
 					de_pc_imm <= id_pc_imm;
 					de_is_jump <= id_is_jump;
