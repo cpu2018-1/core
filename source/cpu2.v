@@ -60,7 +60,7 @@ module cpu2 (
 	//hazard
 	(* mark_debug = "true" *) wire jump_by_reg;
 	(* mark_debug = "true" *) wire is_branch;
-	wire is_exec_wait;
+	(* mark_debug = "true" *) wire is_exec_wait;
 	wire is_cmu;
 	wire is_cms;
 
@@ -76,7 +76,7 @@ module cpu2 (
 	reg id_is_en;
 	reg [31:0] id_pc;
 	//df-ex
-	reg [31:0] de_instr;
+	(* mark_debug = "true" *) reg [31:0] de_instr;
 	reg [31:0] de_pc;
 	reg de_ds_is_f;
 	reg de_dt_is_f;
@@ -88,13 +88,13 @@ module cpu2 (
 	reg [31:0] de_pc_imm;
 	reg de_is_jump;
 	//ex-wa
-	reg [31:0] ew_instr;
+	(* mark_debug = "true" *) reg [31:0] ew_instr;
 	reg [31:0] ew_dd;
 	reg ew_dd_is_f;
 	reg ew_dd_is_en;
 	reg [31:0] ew_wdata;
 	//wa-wr
-	reg [31:0] ww_instr;
+	(* mark_debug = "true" *) reg [31:0] ww_instr;
 	reg [31:0] ww_dd;
 	reg ww_dd_is_f;
 	reg ww_dd_is_en;
@@ -114,7 +114,7 @@ module cpu2 (
 	wire fp_we;
 
 	//mem
-	wire [31:0] ir_addr_tmp;
+	(* mark_debug = "true" *) wire [31:0] ir_addr_tmp;
 
 	//branch
 	wire b_ds_eq_dt;
@@ -137,6 +137,7 @@ module cpu2 (
 
 	//debug
 	wire test_sig;
+	(* mark_debug = "true" *) reg [63:0] dbg_counter;
 	
 	//regfile
 	gp_regfile gpr(clk,id_instr[20:16],id_instr[15:11],ww_instr[25:21],gp_rs ,gp_rt,gp_rd,gp_we);
@@ -202,8 +203,8 @@ module cpu2 (
 
 	assign jump_by_reg = de_instr[31:26] == 6'b001110 || de_instr[31:26] == 6'b101010;  // JALR,JR
 											
-	assign b_ds_eq_dt = exec_ds == exec_dt;
-	assign b_ds_lt_dt = exec_ds < exec_dt;
+	assign b_ds_eq_dt = $signed(exec_ds) == $signed(exec_dt);
+	assign b_ds_lt_dt = $signed(exec_ds) < $signed(exec_dt);
 	assign bp_is_branch = is_branch;
 	assign bp_is_b_op = de_instr[28:26] == 3'b010 && de_instr[31] == 1'b0;
 
@@ -253,6 +254,7 @@ module cpu2 (
 			ww_dd <= 0;
 			ww_dd_is_f <= 0;
 			ww_dd_is_en <= 0;
+			dbg_counter <= 0;
 		end else if (state == st_begin) begin
 			pc <= pc + 1;
 			id_is_en <= 1;
@@ -293,6 +295,8 @@ module cpu2 (
 					de_dt_is_f <= id_dt_is_f;
 					de_ds_is_en <= (id_instr[31:26] != 6'b0 && id_instr[27:26] == 2'b0) ||
 													(id_instr[28:26] == 3'b010 && id_instr[31] == 1'b0) ||
+													id_instr[31:26] == 6'b001110 ||
+													id_instr[31:26] == 6'b101010 ||
 													id_instr[28:26] == 3'b111 ||
 													id_instr[31:26] == 6'b000011 ||
 													id_instr[27:26] == 2'b01 ||
@@ -430,6 +434,9 @@ module cpu2 (
 			ww_dd_is_f <= ew_dd_is_f;
 			ww_dd_is_en <= ew_dd_is_en;
 			// write -> see assign reg_we
+			if(ww_instr != 0) begin
+				dbg_counter <= dbg_counter + 1;
+			end
 
 		end else if (state == st_stall) begin // FPU, IO
 			// wait stage

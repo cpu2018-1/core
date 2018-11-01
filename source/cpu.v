@@ -69,6 +69,8 @@ module cpu (
 
 	wire [31:0] tmp_d_addr;
 
+	reg [63:0] dbg_cntr;
+
 	// JAL, JALR-> r31
 	gp_regfile gpr(clk,i_rdata[20:16],i_rdata[15:11],i_rdata[28:26] == 3'b110 ? 5'b11111 : i_rdata[25:21],gp_rs,gp_rt,gp_rd,gp_we);
 	gp_regfile fpr(clk,i_rdata[20:16],i_rdata[15:11],i_rdata[25:21],fp_rs,fp_rt,fp_rd,fp_we);
@@ -118,6 +120,7 @@ module cpu (
 			f_in_vld <= 0;
 			f_out_rdy <= 0;
 			state <= st_ifetch;
+			dbg_cntr <= 0;
 		end else if (state == st_ifetch) begin	// instraction fetch
 			state <= st_dfetch;
 		end else if (state == st_dfetch) begin  // data fetch
@@ -233,17 +236,17 @@ module cpu (
 			end
 		end else if (state == st_write) begin   // write
 			// for writing reg, you need 1clk
-
+			dbg_cntr <= dbg_cntr + 1;
 			//pc update
 			if (i_rdata[31:26] == 6'b000110 || i_rdata[31:26] == 6'b100010) begin // JAL J
 				pc <= $signed(pc) + $signed({ {6{jaddr[25]}},jaddr });
 			end else if (i_rdata[31:26] == 6'b001110 || i_rdata[31:26] == 6'b101010) begin // JALR JR
 				pc <= ds;
 			end else if (i_rdata[27:26] == 2'b10) begin // B
-				if((i_rdata[31:28] == 4'b0000 && ds == dt) ||
-					 (i_rdata[31:28] == 4'b0010 && ds != dt) ||
-					 (i_rdata[31:28] == 4'b0100 && ds < dt)  ||
-					 (i_rdata[31:28] == 4'b0110 && ds <= dt)) begin
+				if((i_rdata[31:28] == 4'b0000 && $signed(ds) == $signed(dt)) ||
+					 (i_rdata[31:28] == 4'b0010 && $signed(ds) != $signed(dt)) ||
+					 (i_rdata[31:28] == 4'b0100 && $signed(ds) < $signed(dt))  ||
+					 (i_rdata[31:28] == 4'b0110 && $signed(ds) <= $signed(dt))) begin
 					pc <= $signed(pc) + $signed({ {16{imm[15]}},imm });
 				end else begin
 					pc <= pc + 1;
