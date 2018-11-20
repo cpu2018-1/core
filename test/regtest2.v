@@ -1,4 +1,4 @@
-module reg test2(
+module test2(
 	input wire clk,
 	input wire rstn,
 	input wire [31:0] instr,
